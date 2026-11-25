@@ -58,6 +58,7 @@ small{color:#9aa3b8}
 <section id="vLine">
 <div id="list"></div>
 <div class="stage" id="stage">
+<div style="font-size:14px;color:#9aa3b8;margin-bottom:6px;line-height:1.5">🎤 <b>שמע את הזמר המקורי</b>: מנגן את השורה בשירה של הזמר, להקשבה בלבד (לא נשמר). &nbsp; ⏺ <b>הקלט שורה</b>: מנגן רק את הליווי ומקליט אותך.</div>
 <div class="cnt" id="cnt"></div>
 <div class="big" id="cur">בחר שורה מהרשימה</div>
 <div class="next" id="nxt"></div>
@@ -70,6 +71,11 @@ small{color:#9aa3b8}
 <button class="p" id="bOk" disabled>✔ אשר ושמור</button>
 </div>
 <div class="row"><button id="bPrev">שורה קודמת</button><button id="bNext">שורה הבאה</button><button id="bGuide">▶ שמע את הליווי בלבד</button><button class="y" id="bOrig">🎤 שמע את הזמר המקורי</button><label><small><input type="checkbox" id="oMix" checked> עם הליווי</small></label></div>
+<div class="row" style="flex-direction:column;align-items:stretch">
+<label><input type="checkbox" id="vocLive"> הזמר בשורה בזמן ההקלטה (באוזניות בלבד)</label>
+<small style="color:#ffd58a">ברירת מחדל כבויה. כשמסומן, הזמר המקורי מתנגן חלש באוזניות בזמן שאתה מקליט, כדי שתשיר איתו. ההקלטה שנשמרת היא המיקרופון בלבד. בלי אוזניות המיקרופון ייקלט גם אותו.</small>
+<label><small>עוצמת הזמר באוזניות <input type="range" id="vocVol" min="5" max="100" value="35"></small></label>
+</div>
 <small id="msg"></small>
 </div>
 </section>
@@ -122,6 +128,8 @@ const keys=()=>dbp.then(()=>new Promise(r=>{const q=db.transaction('t').objectSt
 const clearAll=()=>dbp.then(()=>new Promise(r=>{const t=db.transaction('t','readwrite');t.objectStore('t').clear();t.oncomplete=r}));
 let saved=new Set();
 const voc=$('voc');
+function liveVoc(){return $('vocLive')&&$('vocLive').checked&&voc.src&&voc.src!==location.href}
+function vocSet(t){voc.volume=($('vocVol').value||35)/100;voc.currentTime=t}
 async function setVoc(blob){voc.src=URL.createObjectURL(blob);voc.load();$('vocMsg').textContent='✔ הדרכת הזמר מוכנה'}
 $('vocFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;await put('voc',f);await setVoc(f)};
 (async()=>{const b=await get('voc');if(b)setVoc(b)})();
@@ -189,9 +197,10 @@ async function lineGo(withRec){
   const l=L[sel], s=Math.max(0,l.s-LEAD), e=l.e+TAIL;
   $('bRec').disabled=true;$('bStop').disabled=false;$('bPlay').disabled=true;$('bOk').disabled=true;
   aud.currentTime=s; await countdown($('cnt'));
+  const lv=withRec&&liveVoc(); if(lv)vocSet(s);
   if(withRec){startRec(); level($('lvl'));}
   mode=withRec?'rec':'guide';
-  await aud.play();
+  await aud.play(); if(lv)await voc.play();
   $('msg').textContent=withRec?'מקליט... שר את השורה':'מנגן';
   const tick=()=>{
     const t=aud.currentTime; $('prog').style.width=Math.min(100,(t-s)/(e-s)*100)+'%';
@@ -201,7 +210,7 @@ async function lineGo(withRec){
   tick();
 }
 async function lineStop(){
-  cancelAnimationFrame(raf); aud.pause(); $('cur').textContent=L[sel].t;
+  cancelAnimationFrame(raf); aud.pause(); voc.pause(); $('cur').textContent=L[sel].t;
   $('bRec').disabled=false;$('bStop').disabled=true; $('lvl').style.width='0';
   if(mode==='rec'){ curBlob=await endRec(); if(curBlob&&curBlob.size>2000){$('bPlay').disabled=false;$('bOk').disabled=false;$('msg').textContent='האזן להקלטה. אם טוב - אשר ושמור, אחרת הקלט שוב.'} }
   mode=null;
@@ -217,14 +226,14 @@ $('fRec').onclick=async()=>{
   if(!aud.src||aud.src===location.href){$('fmsg').textContent='קודם בחר את קובץ הליווי (בטאב שורה אחר שורה)';return}
   stopAll(); try{await mic()}catch(e){$('fmsg').textContent='אין גישה למיקרופון: '+e.message;return}
   $('fRec').disabled=true;$('fStop').disabled=false;$('fPlay').disabled=true;$('fOk').disabled=true;
-  aud.currentTime=0; await countdown($('fcnt')); startRec(); level($('flvl')); await aud.play(); mode='full';
+  aud.currentTime=0; await countdown($('fcnt')); const lv=liveVoc(); if(lv)vocSet(0); startRec(); level($('flvl')); await aud.play(); if(lv)await voc.play(); mode='full';
   const tick=()=>{const t=aud.currentTime; $('fprog').style.width=(t/aud.duration*100)+'%';
     let i=L.findIndex((l,k)=>t<(L[k+1]?L[k+1].s-0.3:1e9)); if(i<0)i=L.length-1;
     const l=L[i]; $('fcur').innerHTML=t<L[0].s-0.5?'<small>הקדמה...</small>':`<span class="fill" style="--p:${Math.max(0,Math.min(100,(t-l.s)/(l.e-l.s)*100))}%">${l.t}</span>`;
     $('fnxt').textContent=L[i+1]?L[i+1].t:'';
     if(aud.ended||aud.paused){fStop();return} raf=requestAnimationFrame(tick)}; tick();
 };
-async function fStop(){cancelAnimationFrame(raf);aud.pause();$('flvl').style.width='0';$('fRec').disabled=false;$('fStop').disabled=true;
+async function fStop(){cancelAnimationFrame(raf);aud.pause();voc.pause();$('flvl').style.width='0';$('fRec').disabled=false;$('fStop').disabled=true;
   if(mode==='full'){fBlob=await endRec(); if(fBlob&&fBlob.size>2000){$('fPlay').disabled=false;$('fOk').disabled=false;$('fmsg').textContent='האזן. אם טוב - שמור.'}} mode=null}
 $('fStop').onclick=fStop;
 $('fPlay').onclick=()=>{if(fBlob){if(curPlay)curPlay.pause();curPlay=new Audio(URL.createObjectURL(fBlob));curPlay.play()}};
