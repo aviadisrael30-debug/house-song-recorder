@@ -149,11 +149,18 @@ async function useAudio(el,msgEl,blob,name){
   const ok=await new Promise(res=>{el.onloadedmetadata=()=>res(true);el.onerror=()=>res(false);setTimeout(()=>res(el.readyState>0),8000)});
   if(!ok||!isFinite(el.duration)){msgEl.textContent='❌ הקובץ '+name+' נטען אבל לא ניתן לנגן אותו ('+fmtMB(blob.size)+'). נסה להוריד אותו שוב מה Drive ולבחור מחדש, או בחר קובץ mp3 אחר.';msgEl.style.color='#ff8a8a';return false}
   msgEl.style.color='';msgEl.textContent='✔ '+name+' | '+fmtMB(blob.size)+' | '+Math.floor(el.duration/60)+':'+String(Math.round(el.duration%60)).padStart(2,'0');return true}
-async function pickAudio(input,key,el,msgEl,minSec){
+async function pickAudio(input,key,el,msgEl){
   const f=input.files[0];if(!f)return;
   msgEl.style.color='';msgEl.textContent='קורא את הקובץ...';
-  let buf;try{buf=await f.arrayBuffer()}catch(e){msgEl.textContent='❌ לא הצלחתי לקרוא את הקובץ: '+e.message+'. נסה להוריד אותו קודם למכשיר (מה Drive: הורדה) ואז לבחור מההורדות.';msgEl.style.color='#ff8a8a';return}
-  if(!buf.byteLength){msgEl.textContent='❌ הקובץ ריק (0 בייט). זה קורה כשבוחרים ישירות מ Drive בלי להוריד. הורד את הקובץ למכשיר קודם ובחר שוב.';msgEl.style.color='#ff8a8a';return}
+  let buf=null,lastErr='';
+  for(const wait of [0,700,2000,4000]){
+    if(wait)await new Promise(r=>setTimeout(r,wait));
+    try{const b=await f.arrayBuffer();if(b.byteLength>1000){buf=b;break}lastErr='הקובץ ריק (0 בייט)'}catch(e){lastErr=e.message}
+  }
+  if(!buf){
+    // fallback: play the picked file directly without copying
+    if(f.size>1000&&await useAudio(el,msgEl,f,f.name)){msgEl.textContent+=' (לא נשמר לפעם הבאה)';return}
+    msgEl.textContent='❌ לא הצלחתי לקרוא את הקובץ ('+lastErr+'). הורד אותו קודם למכשיר (ב Drive: הורדה) ובחר שוב מההורדות.';msgEl.style.color='#ff8a8a';return}
   const blob=new Blob([buf],{type:mimeOf(f)});
   if(await useAudio(el,msgEl,blob,f.name)){await put(key,blob)}}
 async function setInst(b){await useAudio(aud,$('instMsg'),b,'ליווי')}
